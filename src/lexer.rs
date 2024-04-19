@@ -700,7 +700,6 @@ impl RegionalLexer {
         }
 
         if ch == b'\0' {
-            self.cur_token_str = "\0".to_string();
             return TokenType::TEof;
         }
 

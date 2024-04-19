@@ -15,8 +15,9 @@ impl Parser {
         }
     }
 
-    pub fn read_global_statements(&mut self) {
-        self.lexer.lex_token(true);
+    pub fn read_global_statements(&mut self) -> String {
+        let mut builder = String::new();
+        self.lexer.lex_token(true); // Skip TStart
 
         while self.lexer.current_token_type() != TokenType::TEof {
             if self.read_preproc_directive() {
@@ -30,9 +31,16 @@ impl Parser {
                 continue;
             }
 
-            let token = self.lexer.lex_token(true);
-            println!("{:?}: {:?}", token, self.lexer.current_token_str());
+            builder.push_str(&self.lexer.current_token_str());
+            println!(
+                "{:?}: {:?}",
+                self.lexer.current_token_type(),
+                self.lexer.current_token_str()
+            );
+            self.lexer.lex_token(true);
         }
+
+        return builder;
     }
 
     pub fn read_macro_invocation(&mut self) {

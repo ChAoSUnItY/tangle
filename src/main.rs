@@ -27,3 +27,30 @@ fn main() {
         parser.read_global_statements();
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::process::Command;
+
+    use crate::parser::Parser;
+
+    #[test]
+    fn test_cpp_result_eq() {
+        let input = include_str!("../example.c");
+        let mut parser = Parser::new(input);
+        let parser_output = parser.read_global_statements();
+        let output = Command::new("cpp")
+            .arg("example.c")
+            .output()
+            .expect("Failed to execute command");
+        let output = std::str::from_utf8(output.stdout.as_slice())
+            .expect("Failed to convert output to String");
+        let output = output
+            .split("\n")
+            .filter(|line| !line.starts_with("# "))
+            .collect::<String>()
+            .replace(" ", "");
+
+        assert_eq!(parser_output, output);
+    }
+}

@@ -84,16 +84,16 @@ pub enum TokenType {
     TNewline,
 }
 
-pub struct Lexer<'src> {
-    regional_lexers: VecDeque<RegionalLexer<'src>>,
-    aliases: Vec<Alias<'src>>,
-    macros: Vec<Macro<'src>>,
+pub struct Lexer {
+    regional_lexers: VecDeque<RegionalLexer>,
+    aliases: Vec<Alias>,
+    macros: Vec<Macro>,
 }
 
-impl<'src> Lexer<'src> {
-    pub fn new(source: &'src str) -> Self {
+impl Lexer {
+    pub fn new(source: &str) -> Self {
         Self {
-            regional_lexers: VecDeque::from(vec![RegionalLexer::new(source, vec![])]),
+            regional_lexers: VecDeque::from(vec![RegionalLexer::new(source.to_owned(), vec![])]),
             aliases: vec![],
             macros: vec![],
         }
@@ -120,7 +120,7 @@ impl<'src> Lexer<'src> {
                 if aliasing {
                     if let Some(alias) = self.find_alias(&self.current_token_str()) {
                         // enter alias region for parsing
-                        self.append_regional_lexer(alias.source_span, vec![]);
+                        self.append_regional_lexer(alias.replacement.clone(), vec![]);
                         return self.lex_token(aliasing);
                     }
                 }
@@ -140,8 +140,8 @@ impl<'src> Lexer<'src> {
         return false;
     }
 
-    pub fn lex_accept(&mut self, token_type: TokenType) -> bool {
-        self.lex_accept_internal(token_type, true)
+    pub fn lex_accept(&mut self, token_type: TokenType, aliasing: bool) -> bool {
+        self.lex_accept_internal(token_type, aliasing)
     }
 
     pub fn lex_peek(&mut self, token_type: TokenType) -> bool {
@@ -150,17 +150,25 @@ impl<'src> Lexer<'src> {
 
     pub fn lex_expect(&mut self, token_type: TokenType, aliasing: bool) {
         if self.current_token_type() != token_type {
-            error("Unexpected token", self.pos())
+            error(
+                &self.regional_source(),
+                &format!(
+                    "Unexpected token {:?}, expexts {:?}",
+                    self.current_token_type(),
+                    token_type
+                ),
+                self.pos(),
+            )
         }
 
         self.lex_token(aliasing);
     }
 
-    pub fn current_regional_lexer(&self) -> &RegionalLexer<'src> {
+    pub fn current_regional_lexer(&self) -> &RegionalLexer {
         self.regional_lexers.back().unwrap()
     }
 
-    pub fn current_mut_regional_lexer(&mut self) -> &mut RegionalLexer<'src> {
+    pub fn current_mut_regional_lexer(&mut self) -> &mut RegionalLexer {
         self.regional_lexers.back_mut().unwrap()
     }
 
@@ -180,20 +188,31 @@ impl<'src> Lexer<'src> {
         self.current_regional_lexer().pos
     }
 
-    pub fn global_source(&self) -> &'src str {
-        self.regional_lexers.front().unwrap().source
+    pub fn global_source(&self) -> String {
+        (&self.regional_lexers.front().unwrap().source).into()
     }
 
-    pub fn append_regional_lexer(&mut self, source: &'src str, regional_aliases: Vec<Alias<'src>>) {
-        self.regional_lexers.push_back(RegionalLexer::new(source, regional_aliases));
+    pub fn regional_source(&self) -> String {
+        (&self.current_regional_lexer().source).into()
     }
 
-    pub fn add_alias(&mut self, alias: String, source_span: &'src str) {
-        self.aliases.push(Alias::new(alias, source_span));
+    pub fn regional_aliases(&self) -> &[Alias] {
+        &self.current_regional_lexer().regional_aliases
     }
 
-    pub fn find_alias(&self, alias: &str) -> Option<&Alias<'src>> {
-        let resolution = self.aliases
+    pub fn append_regional_lexer(&mut self, source: String, regional_aliases: Vec<Alias>) {
+        self.regional_lexers
+            .push_back(RegionalLexer::new(source, regional_aliases));
+    }
+
+    pub fn add_alias(&mut self, alias: &str, source_span: String) {
+        self.aliases
+            .push(Alias::new(alias.to_string(), source_span));
+    }
+
+    pub fn find_alias(&self, alias: &str) -> Option<&Alias> {
+        let resolution = self
+            .aliases
             .iter()
             .find(|a| a.alias == alias && !a.disabled);
 
@@ -201,10 +220,16 @@ impl<'src> Lexer<'src> {
             return resolution;
         }
 
-        return self.regional_lexers.back().unwrap().regional_aliases.iter().find(|a| a.alias == alias)
+        return self
+            .regional_lexers
+            .back()
+            .unwrap()
+            .regional_aliases
+            .iter()
+            .find(|a| a.alias == alias);
     }
 
-    pub fn undef_alias(&mut self, alias: &'src str) -> bool {
+    pub fn undef_alias(&mut self, alias: &str) -> bool {
         for alias_instance in self.aliases.iter_mut() {
             if alias_instance.alias == alias {
                 alias_instance.disabled = true;
@@ -215,24 +240,20 @@ impl<'src> Lexer<'src> {
         return false;
     }
 
-    pub fn add_macro(
-        &mut self,
-        name: String,
-        parameters: Vec<Alias<'src>>,
-        source_span: &'src str,
-    ) {
-        self.macros.push(Macro::new(name, parameters, source_span));
+    pub fn add_macro(&mut self, name: &str, parameters: Vec<Alias>, source_span: String) {
+        self.macros
+            .push(Macro::new(name.to_string(), parameters, source_span));
     }
 
-    pub fn find_macro(&self, name: &str) -> Option<&Macro<'src>> {
+    pub fn find_macro(&self, name: &str) -> Option<&Macro> {
         self.macros.iter().find(|m| m.name == name)
     }
 }
 
-pub struct RegionalLexer<'src> {
-    source: &'src str,
+pub struct RegionalLexer {
+    source: String,
     pos: usize,
-    regional_aliases: Vec<Alias<'src>>,
+    regional_aliases: Vec<Alias>,
     cur_token_type: TokenType,
     cur_token_str: String,
     cur_token_pos: usize,
@@ -240,8 +261,8 @@ pub struct RegionalLexer<'src> {
     pub preproc_match: bool,
 }
 
-impl<'src> RegionalLexer<'src> {
-    pub fn new(source: &'src str, regional_aliases: Vec<Alias<'src>>) -> Self {
+impl RegionalLexer {
+    pub fn new(source: String, regional_aliases: Vec<Alias>) -> Self {
         Self {
             source,
             pos: 0,
@@ -352,6 +373,7 @@ impl<'src> RegionalLexer<'src> {
                 "#else" => TokenType::TCppdElse,
                 "#endif" => TokenType::TCppdEndif,
                 _ => error(
+                    &Into::<String>::into(&self.source),
                     &format!("Unexpected preprocessor directive {}", self.cur_token_str),
                     start_pos,
                 ),
@@ -373,7 +395,11 @@ impl<'src> RegionalLexer<'src> {
                 }
 
                 if !enclosed {
-                    error("Unenclosed comment", self.pos);
+                    error(
+                        &Into::<String>::into(&self.source),
+                        "Unenclosed comment",
+                        self.pos,
+                    );
                 } else {
                     self.read_char(offset + 2);
                     return self.next_token();
@@ -399,11 +425,13 @@ impl<'src> RegionalLexer<'src> {
 
         if ch == b'(' {
             self.read_char(1);
+            self.cur_token_str = "(".to_string();
             return TokenType::TOpenBracket;
         }
 
         if ch == b')' {
             self.read_char(1);
+            self.cur_token_str = ")".to_string();
             return TokenType::TCloseBracket;
         }
 
@@ -444,36 +472,19 @@ impl<'src> RegionalLexer<'src> {
 
         if ch == b'"' {
             let mut length = 1;
-            let mut builder = String::new();
 
             while self.peek_char(length) != b'"' {
                 ch = self.peek_char(length);
 
                 if ch == b'\\' {
-                    ch = self.peek_char(length + 1);
-
-                    match ch {
-                        b'n' => builder.push('\n'),
-                        b'"' => builder.push('"'),
-                        b'r' => builder.push('\r'),
-                        b'\'' => builder.push('\''),
-                        b't' => builder.push('\t'),
-                        b'\\' => builder.push('\\'),
-                        _ => error(
-                            &format!("character {} is not a escapable character", ch),
-                            self.pos + length,
-                        ),
-                    }
-
                     length += 2;
                 } else {
-                    builder.push(ch as char);
                     length += 1;
                 }
             }
 
+            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
             self.read_char(length + 1);
-            self.cur_token_str = builder;
 
             return TokenType::TString;
         }
@@ -483,35 +494,20 @@ impl<'src> RegionalLexer<'src> {
             ch = self.peek_char(1);
 
             if ch == b'\\' {
-                ch = self.peek_char(2);
-
-                let ch_str = match ch {
-                    b'n' => "\n",
-                    b'"' => "\"",
-                    b'r' => "\r",
-                    b'\'' => "\'",
-                    b't' => "\t",
-                    b'\\' => "\\",
-                    _ => error(
-                        &format!("character {} is not a escapable character", ch),
-                        self.pos,
-                    ),
-                };
-
-                self.cur_token_str = ch_str.to_string();
                 length = 2;
             } else {
-                self.cur_token_str = String::from(self.peek_char(1) as char);
                 length = 1;
             }
 
             if self.peek_char(length + 1) != b'\'' {
                 error(
+                    &Into::<String>::into(&self.source),
                     "expected \' here to enclose char literal",
                     self.pos + length,
                 );
             }
 
+            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
             self.read_char(length + 1);
             return TokenType::TChar;
         }
@@ -638,11 +634,13 @@ impl<'src> RegionalLexer<'src> {
             }
 
             self.read_char(1);
+            self.cur_token_str = "+".to_string();
             return TokenType::TPlus;
         }
 
         if ch == b';' {
             self.read_char(1);
+            self.cur_token_str = ";".to_string();
             return TokenType::TSemicolon;
         }
 
@@ -702,6 +700,7 @@ impl<'src> RegionalLexer<'src> {
         }
 
         if ch == b'\0' {
+            self.cur_token_str = "\0".to_string();
             return TokenType::TEof;
         }
 

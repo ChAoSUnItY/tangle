@@ -1,33 +1,33 @@
 #[derive(Debug, Clone)]
-pub struct Alias<'src> {
+pub struct Alias {
     pub alias: String,
-    pub source_span: &'src str,
-    pub disabled: bool
+    pub replacement: String,
+    pub disabled: bool,
 }
 
-impl<'src> Alias<'src> {
-    pub fn new(alias: String, source_span: &'src str) -> Self {
+impl Alias {
+    pub fn new(alias: String, replacement: String) -> Self {
         Self {
             alias,
-            source_span,
+            replacement,
             disabled: false,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct Macro<'src> {
+pub struct Macro {
     pub name: String,
-    pub parameters: Vec<Alias<'src>>,
-    pub source_span: &'src str,
+    pub parameters: Vec<Alias>,
+    pub source_span: String,
 }
 
-impl<'src> Macro<'src> {
-    pub fn new(name: String, parameters: Vec<Alias<'src>>, source_span: &'src str) -> Self {
+impl Macro {
+    pub fn new(name: String, parameters: Vec<Alias>, source_span: String) -> Self {
         Self {
             name,
             parameters,
-            source_span
+            source_span,
         }
     }
 }

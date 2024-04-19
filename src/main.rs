@@ -16,6 +16,14 @@ fn main() {
         .write_all(source.as_bytes())
         .unwrap();
 
-    let mut parser = Parser::new("#define SUB - \"STR\" +\n#define ADD SUB - 1 *\nwhile ADD while + (");
-    parser.read_global_statements();
+    // {
+    //     let mut parser =
+    //         Parser::new("#define SUB - \"STR\" +\n#define ADD SUB - 1 *\nwhile ADD while + (");
+    //     parser.read_global_statements();
+    // }
+
+    {
+        let mut parser = Parser::new(include_str!("../example.c"));
+        parser.read_global_statements();
+    }
 }

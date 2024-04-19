@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use std::process::abort;
 use std::sync::OnceLock;
 
@@ -46,20 +47,19 @@ pub fn get_source() -> &'static str {
     SOURCE.get_or_init(|| read_source_file("shecc/src/main.c").unwrap())
 }
 
-pub fn error(msg: &str, pos: usize) -> ! {
-    let source = get_source();
-    let mut offset = pos;
+pub fn error<'src, 'msg>(source: &'src str, msg: &'msg str, pos: usize) -> ! {
+    let mut offset = pos.clamp(0, source.len() - 1);
     let start_idx: usize;
     let end_idx: usize;
 
-    while source.as_bytes()[offset] != b'\n' {
+    while offset > 0 && source.as_bytes()[offset] != b'\n' {
         offset -= 1;
     }
 
-    start_idx = offset + 1;
-    offset = pos;
+    start_idx = offset;
+    offset = pos.clamp(0, source.len() - 1);
 
-    while source.as_bytes()[offset] != b'\n' {
+    while offset < source.len() && source.as_bytes()[offset] != b'\n' {
         offset += 1;
     }
 
@@ -67,5 +67,6 @@ pub fn error(msg: &str, pos: usize) -> ! {
 
     println!("{}", &source[start_idx..end_idx]);
     println!("{}^ {msg}", " ".repeat(pos - start_idx));
+    println!("Backtrace: {}", Backtrace::capture());
     abort()
 }

@@ -8,6 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'tangle'",
+            "sourceLanguages": ["rust"],
             "cargo": {
                 "args": [
                     "build",

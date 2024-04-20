@@ -23,21 +23,20 @@ impl Parser {
             if self.read_preproc_directive() {
                 self.lexer.current_token_type();
                 continue;
-            }
-
-            if self.lexer.lex_peek(TokenType::TIdentifier) {
+            } else if self.lexer.lex_peek(TokenType::TIdentifier) {
                 // We just assume it's a macro invocation atm
                 self.read_macro_invocation();
+                self.lexer.lex_token(true);
                 continue;
+            } else {
+                builder.push_str(&self.lexer.current_token_str());
+                println!(
+                    "{:?}: {:?}",
+                    self.lexer.current_token_type(),
+                    self.lexer.current_token_str()
+                );
+                self.lexer.lex_token(true);
             }
-
-            builder.push_str(&self.lexer.current_token_str());
-            println!(
-                "{:?}: {:?}",
-                self.lexer.current_token_type(),
-                self.lexer.current_token_str()
-            );
-            self.lexer.lex_token(true);
         }
 
         return builder;

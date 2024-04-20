@@ -13,7 +13,7 @@ once the prototype is finished and tested.
 - [x] 1-to-n `#define` alias
 - [x] function-like macro
 - [x] nested function-like macro
-- [ ] multiple line function-like macro (backed by `\` backslash character)
+- [x] multiple line function-like macro (backed by `\` backslash character)
 - [ ] `__VAR_ARGS__` parameter in function-like macro
 - [ ] identifier concatentation (`##` concatentation operator)
 - [ ] identifier stringfication (`#` stringification operator)

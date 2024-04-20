@@ -258,6 +258,7 @@ pub struct RegionalLexer {
     cur_token_str: String,
     cur_token_pos: usize,
     pub skip_newline: bool,
+    pub skip_backslash: bool,
     pub preproc_match: bool,
 }
 
@@ -271,6 +272,7 @@ impl RegionalLexer {
             cur_token_str: String::new(),
             cur_token_pos: 0,
             skip_newline: true,
+            skip_backslash: true,
             preproc_match: false,
         }
     }
@@ -337,7 +339,10 @@ impl RegionalLexer {
         loop {
             let ch = self.peek_char(0);
 
-            if Self::is_whitespace(ch) || self.skip_newline && Self::is_newline(ch) {
+            if Self::is_whitespace(ch)
+                || self.skip_newline && Self::is_newline(ch)
+                || self.skip_backslash && ch == b'\\'
+            {
                 self.pos += 1;
                 continue;
             }
@@ -692,6 +697,11 @@ impl RegionalLexer {
                 "continue" => TokenType::TContinue,
                 _ => TokenType::TIdentifier,
             };
+        }
+
+        if ch == b'\\' {
+            self.read_char(1);
+            return TokenType::TBackslash;
         }
 
         if Self::is_newline(ch) {

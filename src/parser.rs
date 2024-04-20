@@ -43,6 +43,7 @@ impl Parser {
         return builder;
     }
 
+    #[allow(unused_variables)]
     pub fn read_macro_invocation(&mut self) {
         let alias = self.lexer.current_token_str();
         self.lexer.lex_expect(TokenType::TIdentifier, false);
@@ -52,13 +53,11 @@ impl Parser {
         let mut bracket_depth = 0;
 
         while !self.lexer.lex_peek(TokenType::TEof) {
-            if cfg!(debug_assertions) {
-                let region = self.lexer.regional_source();
-                let region_alias = self.lexer.regional_aliases();
-                let token_type = self.lexer.current_token_type();
-                let token_str = self.lexer.current_token_str();
-                let pos = self.lexer.pos();
-            }
+            let region = self.lexer.regional_source();
+            let region_alias = self.lexer.regional_aliases();
+            let token_type = self.lexer.current_token_type();
+            let token_str = self.lexer.current_token_str();
+            let pos = self.lexer.pos();
 
             if self.lexer.lex_peek(TokenType::TOpenBracket) {
                 bracket_depth += 1;
@@ -123,6 +122,8 @@ impl Parser {
             self.lexer.current_mut_regional_lexer().skip_newline = false;
 
             if self.lexer.lex_accept(TokenType::TOpenBracket, false) {
+                self.lexer.current_mut_regional_lexer().skip_backslash = false;
+
                 // Macro
                 let mut parameters = vec![];
 
@@ -147,7 +148,11 @@ impl Parser {
                 let start_pos = self.lexer.current_token_pos();
 
                 while !self.lexer.lex_peek(TokenType::TNewline) {
-                    self.lexer.lex_token(false);
+                    if self.lexer.lex_accept(TokenType::TBackslash, true) {
+                        self.lexer.lex_expect(TokenType::TNewline, true);
+                    } else {
+                        self.lexer.lex_token(false);
+                    }
                 }
 
                 let end_pos = self.lexer.current_token_pos();

@@ -240,9 +240,19 @@ impl Lexer {
         return false;
     }
 
-    pub fn add_macro(&mut self, name: &str, parameters: Vec<Alias>, source_span: String) {
-        self.macros
-            .push(Macro::new(name.to_string(), parameters, source_span));
+    pub fn add_macro(
+        &mut self,
+        name: &str,
+        parameters: Vec<Alias>,
+        is_variadic: bool,
+        source_span: String,
+    ) {
+        self.macros.push(Macro::new(
+            name.to_string(),
+            parameters,
+            is_variadic,
+            source_span,
+        ));
     }
 
     pub fn find_macro(&self, name: &str) -> Option<&Macro> {
@@ -462,6 +472,7 @@ impl RegionalLexer {
 
         if ch == b',' {
             self.read_char(1);
+            self.cur_token_str = ",".to_string();
             return TokenType::TComma;
         }
 

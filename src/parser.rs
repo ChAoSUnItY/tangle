@@ -97,12 +97,31 @@ impl Parser {
 
         let mut aliases = mac.parameters.clone();
 
-        if aliases.len() != argument_regions.len() {
+        if !mac.is_variadic && aliases.len() != argument_regions.len() {
             panic!(
                 "Macro {alias} has mismatched parameter list:\nExpects: {:?}, Got: {:?}",
                 aliases.iter().map(|a| &a.alias).collect::<Vec<_>>(),
                 argument_regions
             );
+        }
+
+        if mac.is_variadic && argument_regions.len() < aliases.len() - 1 {
+            panic!(
+                "Macro {alias} takes at least {:?} arguments",
+                aliases.len() - 1
+            );
+        }
+
+        if mac.is_variadic {
+            if argument_regions.len() == aliases.len() - 1 {
+                // Appends synthesized parameter
+                argument_regions.push(String::new());
+            } else {
+                // Concats remaining parameters into single parameter
+                let variadic_argument = argument_regions[aliases.len() - 1..].join(",");
+                argument_regions.truncate(aliases.len());
+                argument_regions[aliases.len() - 1] = variadic_argument;
+            }
         }
 
         for (i, alias) in aliases.iter_mut().enumerate() {
@@ -121,6 +140,7 @@ impl Parser {
             self.lexer.current_mut_regional_lexer().skip_newline = false;
 
             if self.lexer.lex_accept(TokenType::TOpenBracket, false) {
+                let mut is_variadic = false;
                 self.lexer.current_mut_regional_lexer().skip_backslash = false;
 
                 // Macro
@@ -128,8 +148,14 @@ impl Parser {
 
                 if !self.lexer.lex_accept(TokenType::TCloseBracket, false) {
                     loop {
-                        let alias = self.lexer.current_token_str();
-                        self.lexer.lex_expect(TokenType::TIdentifier, false);
+                        let alias = if self.lexer.lex_accept(TokenType::TElipsis, false) {
+                            is_variadic = true;
+                            "__VA_ARGS__".to_string()
+                        } else {
+                            let alias = self.lexer.current_token_str();
+                            self.lexer.lex_expect(TokenType::TIdentifier, false);
+                            alias
+                        };
 
                         // We don't care the alias region now, it is
                         // later replaced with actual parsed argument
@@ -158,9 +184,37 @@ impl Parser {
                 self.lexer.current_mut_regional_lexer().skip_newline = true;
                 self.lexer.lex_expect(TokenType::TNewline, false);
 
+                // Validate if __VA_ARGS__ is at the end of parameter list
+                if is_variadic {
+                    let va_args_parameters = parameters
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, parameter)| parameter.alias == "__VA_ARGS__")
+                        .collect::<Vec<_>>();
+
+                    if va_args_parameters.len() != 1 {
+                        error(
+                            &self.lexer.regional_source(),
+                            "__VA_ARGS__ cannot be declared more than once",
+                            start_pos,
+                        );
+                    }
+
+                    let (param_idx, _) = va_args_parameters.first().unwrap();
+
+                    if *param_idx != parameters.len() - 1 {
+                        error(
+                            &self.lexer.regional_source(),
+                            "__VA_ARGS__ must be defined at the end of macro parameter list",
+                            start_pos,
+                        );
+                    }
+                }
+
                 self.lexer.add_macro(
                     &alias,
                     parameters,
+                    is_variadic,
                     self.lexer.global_source()[start_pos..end_pos].to_string(),
                 );
             } else {

@@ -19,14 +19,21 @@ impl Alias {
 pub struct Macro {
     pub name: String,
     pub parameters: Vec<Alias>,
+    pub is_variadic: bool,
     pub source_span: String,
 }
 
 impl Macro {
-    pub fn new(name: String, parameters: Vec<Alias>, source_span: String) -> Self {
+    pub fn new(
+        name: String,
+        parameters: Vec<Alias>,
+        is_variadic: bool,
+        source_span: String,
+    ) -> Self {
         Self {
             name,
             parameters,
+            is_variadic,
             source_span,
         }
     }

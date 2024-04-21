@@ -14,6 +14,6 @@ once the prototype is finished and tested.
 - [x] function-like macro
 - [x] nested function-like macro
 - [x] multiple line function-like macro (backed by `\` backslash character)
-- [ ] `__VAR_ARGS__` parameter in function-like macro
+- [ ] `__VA_ARGS__` parameter in function-like macro
 - [ ] identifier concatentation (`##` concatentation operator)
 - [ ] identifier stringfication (`#` stringification operator)

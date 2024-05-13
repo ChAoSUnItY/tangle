@@ -7,6 +7,7 @@ mod defs;
 mod globals;
 mod lexer;
 mod parser;
+mod source;
 
 fn main() {
     let source = get_source();

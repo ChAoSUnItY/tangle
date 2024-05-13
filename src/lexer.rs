@@ -82,6 +82,8 @@ pub enum TokenType {
     /* hints */
     TBackslash,
     TNewline,
+    /* C pre-processor operators */
+    TDoubleHash,
 }
 
 pub struct Lexer {
@@ -107,25 +109,36 @@ impl Lexer {
         self.next_token();
 
         let token_type = self.current_token_type();
+        let pos = self.current_token_pos();
 
-        match token_type {
-            TokenType::TEof => {
-                if self.regional_lexers.len() > 1 {
-                    // esacapes current region
-                    self.regional_lexers.pop_back();
-                    return self.lex_token(aliasing);
-                }
+        if token_type == TokenType::TIdentifier && aliasing {
+            if let Some(alias) = self.find_alias(&self.current_token_str()).cloned() {
+                // enter alias region for parsing
+                self.current_mut_regional_lexer().cur_token_str = alias.replacement.clone();
+                self.append_regional_lexer(alias.replacement, vec![]);
+                return self.lex_token(aliasing);
             }
-            TokenType::TIdentifier => {
-                if aliasing {
-                    if let Some(alias) = self.find_alias(&self.current_token_str()) {
-                        // enter alias region for parsing
-                        self.append_regional_lexer(alias.replacement.clone(), vec![]);
-                        return self.lex_token(aliasing);
-                    }
-                }
+        }
+
+        if self.lex_peek(TokenType::TEof) && self.regional_lexers.len() > 1 {
+            // esacapes current region
+            self.regional_lexers.pop_back();
+            return self.lex_token(aliasing);
+        }
+
+        if self.lex_peek(TokenType::TDoubleHash) {
+            let mut previous_token_str = self.current_token_str();
+            let next_token_type = self.lex_token(aliasing);
+
+            if next_token_type == TokenType::TEof {
+                panic!("Stray ##");
             }
-            _ => {}
+
+            let next_token_str = self.current_token_str();
+            previous_token_str.push_str(&next_token_str);
+
+            self.append_regional_lexer(previous_token_str, self.regional_aliases().to_vec());
+            return self.lex_token(aliasing);
         }
 
         token_type
@@ -262,13 +275,14 @@ impl Lexer {
 
 pub struct RegionalLexer {
     source: String,
-    pos: usize,
+    pub pos: usize,
     regional_aliases: Vec<Alias>,
     cur_token_type: TokenType,
     cur_token_str: String,
     cur_token_pos: usize,
     pub skip_newline: bool,
     pub skip_backslash: bool,
+    pub skip_hashes: bool,
     pub preproc_match: bool,
 }
 
@@ -283,6 +297,7 @@ impl RegionalLexer {
             cur_token_pos: 0,
             skip_newline: true,
             skip_backslash: true,
+            skip_hashes: false,
             preproc_match: false,
         }
     }
@@ -368,6 +383,16 @@ impl RegionalLexer {
         let mut ch = self.peek_char(0);
 
         if ch == b'#' {
+            if self.peek_char(1) == b'#' {
+                self.read_char(2);
+
+                return if self.skip_hashes {
+                    self.next_token()
+                } else {
+                    TokenType::TDoubleHash
+                };
+            }
+
             let mut length = 1;
 
             while Self::is_alnum(self.peek_char(length)) {

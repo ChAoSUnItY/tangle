@@ -142,6 +142,7 @@ impl Parser {
             if self.lexer.lex_accept(TokenType::TOpenBracket, false) {
                 let mut is_variadic = false;
                 self.lexer.current_mut_regional_lexer().skip_backslash = false;
+                self.lexer.current_mut_regional_lexer().skip_hashes = true;
 
                 // Macro
                 let mut parameters = vec![];
@@ -173,8 +174,8 @@ impl Parser {
                 let start_pos = self.lexer.current_token_pos();
 
                 while !self.lexer.lex_peek(TokenType::TNewline) {
-                    if self.lexer.lex_accept(TokenType::TBackslash, true) {
-                        self.lexer.lex_expect(TokenType::TNewline, true);
+                    if self.lexer.lex_accept(TokenType::TBackslash, false) {
+                        self.lexer.lex_expect(TokenType::TNewline, false);
                     } else {
                         self.lexer.lex_token(false);
                     }
@@ -182,6 +183,8 @@ impl Parser {
 
                 let end_pos = self.lexer.current_token_pos();
                 self.lexer.current_mut_regional_lexer().skip_newline = true;
+                self.lexer.current_mut_regional_lexer().skip_backslash = true;
+                self.lexer.current_mut_regional_lexer().skip_hashes = false;
                 self.lexer.lex_expect(TokenType::TNewline, false);
 
                 // Validate if __VA_ARGS__ is at the end of parameter list

@@ -23,7 +23,7 @@ fn main() {
     // }
 
     {
-        let mut parser = Parser::new(include_str!("../example.c"));
+        let mut parser = Parser::new(include_str!("../concat.c"));
         parser.read_global_statements();
     }
 }

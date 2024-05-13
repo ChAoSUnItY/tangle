@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{fmt::Display, ops::Range};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceSegments<'src> {
@@ -30,6 +30,12 @@ impl<'src> SourceSegments<'src> {
     pub fn push_span(&mut self, span: &'src str) {
         self.segments.push(span.as_bytes());
         self.len += span.len();
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.segments.clear();
+        self.len = 0;
     }
 
     pub fn index(&self, index: usize) -> Option<u8> {
@@ -99,6 +105,40 @@ impl<'src, 'other> PartialEq<SourceSegments<'src>> for &'other str {
                 .flat_map(|&segment| segment)
                 .copied()
                 .collect::<Vec<_>>()
+    }
+}
+
+impl<'a, 'src> Into<Vec<u8>> for &'a SourceSegments<'src> {
+    fn into(self) -> Vec<u8> {
+        self.segments
+            .iter()
+            .flat_map(|&segment| segment)
+            .copied()
+            .collect::<Vec<_>>()
+    }
+}
+
+impl<'src> Into<String> for SourceSegments<'src> {
+    fn into(self) -> String {
+        self.segments
+            .iter()
+            .flat_map(|&segment| segment.into_iter().map(|&b| b as char).collect::<Vec<_>>())
+            .collect()
+    }
+}
+
+impl<'a, 'src> Into<String> for &'a SourceSegments<'src> {
+    fn into(self) -> String {
+        self.segments
+            .iter()
+            .flat_map(|&segment| segment.into_iter().map(|&b| b as char).collect::<Vec<_>>())
+            .collect::<String>()
+    }
+}
+
+impl<'src> Display for SourceSegments<'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Into::<String>::into(self))
     }
 }
 

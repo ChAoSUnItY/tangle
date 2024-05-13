@@ -1,12 +1,14 @@
+use crate::source::SourceSegments;
+
 #[derive(Debug, Clone)]
-pub struct Alias {
-    pub alias: String,
-    pub replacement: String,
+pub struct Alias<'src> {
+    pub alias: SourceSegments<'src>,
+    pub replacement: SourceSegments<'src>,
     pub disabled: bool,
 }
 
-impl Alias {
-    pub fn new(alias: String, replacement: String) -> Self {
+impl<'src> Alias<'src> {
+    pub fn new(alias: SourceSegments<'src>, replacement: SourceSegments<'src>) -> Self {
         Self {
             alias,
             replacement,
@@ -16,19 +18,19 @@ impl Alias {
 }
 
 #[derive(Debug)]
-pub struct Macro {
-    pub name: String,
-    pub parameters: Vec<Alias>,
+pub struct Macro<'src> {
+    pub name: SourceSegments<'src>,
+    pub parameters: Vec<Alias<'src>>,
     pub is_variadic: bool,
-    pub source_span: String,
+    pub source_span: SourceSegments<'src>,
 }
 
-impl Macro {
+impl<'src> Macro<'src> {
     pub fn new(
-        name: String,
-        parameters: Vec<Alias>,
+        name: SourceSegments<'src>,
+        parameters: Vec<Alias<'src>>,
         is_variadic: bool,
-        source_span: String,
+        source_span: SourceSegments<'src>,
     ) -> Self {
         Self {
             name,

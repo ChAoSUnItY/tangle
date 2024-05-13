@@ -2,14 +2,15 @@ use crate::{
     defs::Alias,
     globals::error,
     lexer::{Lexer, TokenType},
+    source::SourceSegments,
 };
 
-pub struct Parser {
-    lexer: Lexer,
+pub struct Parser<'src> {
+    lexer: Lexer<'src>,
 }
 
-impl Parser {
-    pub fn new(source: &str) -> Self {
+impl<'src> Parser<'src> {
+    pub fn new(source: &'src str) -> Self {
         Self {
             lexer: Lexer::new(source),
         }
@@ -29,9 +30,9 @@ impl Parser {
                 self.lexer.lex_token(true);
                 continue;
             } else {
-                builder.push_str(&self.lexer.current_token_str());
+                builder.push_str(&Into::<String>::into(&self.lexer.current_token_str()));
                 println!(
-                    "{:?}: {:?}",
+                    "{:?}: {}",
                     self.lexer.current_token_type(),
                     self.lexer.current_token_str()
                 );
@@ -47,16 +48,16 @@ impl Parser {
         let alias = self.lexer.current_token_str();
         self.lexer.lex_expect(TokenType::TIdentifier, false);
         self.lexer.lex_expect(TokenType::TOpenBracket, true);
+        let mut replacement_builder = SourceSegments::new(&[]);
         let mut argument_regions = vec![];
-        let mut replacement_builder = String::new();
         let mut bracket_depth = 0;
 
         while !self.lexer.lex_peek(TokenType::TEof) {
-            let region = self.lexer.regional_source();
-            let region_alias = self.lexer.regional_aliases();
-            let token_type = self.lexer.current_token_type();
-            let token_str = self.lexer.current_token_str();
-            let pos = self.lexer.pos();
+            // let region = self.lexer.regional_source();
+            // let region_alias = self.lexer.regional_aliases();
+            // let token_type = self.lexer.current_token_type();
+            // let token_str = self.lexer.current_token_str();
+            // let pos = self.lexer.pos();
 
             if self.lexer.lex_peek(TokenType::TOpenBracket) {
                 bracket_depth += 1;
@@ -67,7 +68,7 @@ impl Parser {
             if self.lexer.lex_peek(TokenType::TIdentifier) {
                 self.read_macro_invocation();
             } else {
-                replacement_builder.push_str(&self.lexer.current_token_str());
+                replacement_builder.push_segment(&self.lexer.current_token_str());
                 self.lexer.lex_token(true);
             }
 
@@ -85,13 +86,13 @@ impl Parser {
 
         if self.lexer.lex_peek(TokenType::TEof) {
             error(
-                &self.lexer.regional_source(),
+                &Into::<String>::into(self.lexer.regional_source()),
                 "Unexpected source end",
                 self.lexer.current_token_pos(),
             );
         }
 
-        let Some(mac) = self.lexer.find_macro(&alias) else {
+        let Some(mac) = self.lexer.find_macro(alias.clone()) else {
             panic!("Macro {alias} is not defined but yet used");
         };
 
@@ -115,17 +116,23 @@ impl Parser {
         if mac.is_variadic {
             if argument_regions.len() == aliases.len() - 1 {
                 // Appends synthesized parameter
-                argument_regions.push(String::new());
+                argument_regions.push(SourceSegments::new(&[]));
             } else {
                 // Concats remaining parameters into single parameter
-                let variadic_argument = argument_regions[aliases.len() - 1..].join(",");
+                let mut variadic_argument = argument_regions[aliases.len() - 1].to_owned();
+
+                for i in aliases.len()..argument_regions.len() {
+                    variadic_argument.push_span(",");
+                    variadic_argument.push_segment(&argument_regions[i]);
+                }
+
                 argument_regions.truncate(aliases.len());
                 argument_regions[aliases.len() - 1] = variadic_argument;
             }
         }
 
         for (i, alias) in aliases.iter_mut().enumerate() {
-            alias.replacement = argument_regions[i].to_owned();
+            alias.replacement = argument_regions[i].clone();
         }
 
         self.lexer
@@ -150,7 +157,7 @@ impl Parser {
                     loop {
                         let alias = if self.lexer.lex_accept(TokenType::TElipsis, false) {
                             is_variadic = true;
-                            "__VA_ARGS__".to_string()
+                            SourceSegments::new(&[b"__VA_ARGS__"])
                         } else {
                             let alias = self.lexer.current_token_str();
                             self.lexer.lex_expect(TokenType::TIdentifier, false);
@@ -159,7 +166,7 @@ impl Parser {
 
                         // We don't care the alias region now, it is
                         // later replaced with actual parsed argument
-                        parameters.push(Alias::new(alias, String::new()));
+                        parameters.push(Alias::new(alias, SourceSegments::new(&[])));
 
                         if self.lexer.lex_accept(TokenType::TComma, false) {
                             continue;
@@ -194,7 +201,7 @@ impl Parser {
 
                     if va_args_parameters.len() != 1 {
                         error(
-                            &self.lexer.regional_source(),
+                            &Into::<String>::into(self.lexer.regional_source()),
                             "__VA_ARGS__ cannot be declared more than once",
                             start_pos,
                         );
@@ -204,7 +211,7 @@ impl Parser {
 
                     if *param_idx != parameters.len() - 1 {
                         error(
-                            &self.lexer.regional_source(),
+                            &Into::<String>::into(self.lexer.regional_source()),
                             "__VA_ARGS__ must be defined at the end of macro parameter list",
                             start_pos,
                         );
@@ -212,10 +219,10 @@ impl Parser {
                 }
 
                 self.lexer.add_macro(
-                    &alias,
+                    alias,
                     parameters,
                     is_variadic,
-                    self.lexer.global_source()[start_pos..end_pos].to_string(),
+                    self.lexer.global_source().index_range(start_pos..end_pos),
                 );
             } else {
                 while !self.lexer.lex_peek(TokenType::TNewline) {
@@ -227,8 +234,8 @@ impl Parser {
                 self.lexer.lex_expect(TokenType::TNewline, false);
 
                 self.lexer.add_alias(
-                    &alias,
-                    self.lexer.global_source()[start_pos..end_pos].to_string(),
+                    alias,
+                    self.lexer.global_source().index_range(start_pos..end_pos),
                 );
             }
 

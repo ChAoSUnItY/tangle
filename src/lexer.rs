@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use crate::{
     defs::{Alias, Macro},
     globals::error,
+    source::SourceSegments,
 };
 
 #[allow(dead_code)]
@@ -84,16 +85,19 @@ pub enum TokenType {
     TNewline,
 }
 
-pub struct Lexer {
-    regional_lexers: VecDeque<RegionalLexer>,
-    aliases: Vec<Alias>,
-    macros: Vec<Macro>,
+pub struct Lexer<'src> {
+    regional_lexers: VecDeque<RegionalLexer<'src>>,
+    aliases: Vec<Alias<'src>>,
+    macros: Vec<Macro<'src>>,
 }
 
-impl Lexer {
-    pub fn new(source: &str) -> Self {
+impl<'src> Lexer<'src> {
+    pub fn new(source: &'src str) -> Self {
         Self {
-            regional_lexers: VecDeque::from(vec![RegionalLexer::new(source.to_owned(), vec![])]),
+            regional_lexers: VecDeque::from(vec![RegionalLexer::new(
+                SourceSegments::new(&[source.as_bytes()]),
+                vec![],
+            )]),
             aliases: vec![],
             macros: vec![],
         }
@@ -118,7 +122,7 @@ impl Lexer {
             }
             TokenType::TIdentifier => {
                 if aliasing {
-                    if let Some(alias) = self.find_alias(&self.current_token_str()) {
+                    if let Some(alias) = self.find_alias(self.current_token_str()) {
                         // enter alias region for parsing
                         self.append_regional_lexer(alias.replacement.clone(), vec![]);
                         return self.lex_token(aliasing);
@@ -151,7 +155,7 @@ impl Lexer {
     pub fn lex_expect(&mut self, token_type: TokenType, aliasing: bool) {
         if self.current_token_type() != token_type {
             error(
-                &self.regional_source(),
+                &Into::<String>::into(self.regional_source()),
                 &format!(
                     "Unexpected token {:?}, expexts {:?}",
                     self.current_token_type(),
@@ -164,11 +168,11 @@ impl Lexer {
         self.lex_token(aliasing);
     }
 
-    pub fn current_regional_lexer(&self) -> &RegionalLexer {
+    pub fn current_regional_lexer(&self) -> &RegionalLexer<'src> {
         self.regional_lexers.back().unwrap()
     }
 
-    pub fn current_mut_regional_lexer(&mut self) -> &mut RegionalLexer {
+    pub fn current_mut_regional_lexer(&mut self) -> &mut RegionalLexer<'src> {
         self.regional_lexers.back_mut().unwrap()
     }
 
@@ -176,7 +180,7 @@ impl Lexer {
         self.current_regional_lexer().cur_token_type
     }
 
-    pub fn current_token_str(&self) -> String {
+    pub fn current_token_str(&self) -> SourceSegments<'src> {
         self.current_regional_lexer().cur_token_str.clone()
     }
 
@@ -188,33 +192,32 @@ impl Lexer {
         self.current_regional_lexer().pos
     }
 
-    pub fn global_source(&self) -> String {
-        (&self.regional_lexers.front().unwrap().source).into()
+    pub fn global_source(&self) -> SourceSegments<'src> {
+        self.regional_lexers.front().unwrap().source.clone()
     }
 
-    pub fn regional_source(&self) -> String {
-        (&self.current_regional_lexer().source).into()
+    pub fn regional_source(&self) -> SourceSegments<'src> {
+        self.current_regional_lexer().source.clone()
     }
 
-    pub fn regional_aliases(&self) -> &[Alias] {
-        &self.current_regional_lexer().regional_aliases
-    }
-
-    pub fn append_regional_lexer(&mut self, source: String, regional_aliases: Vec<Alias>) {
+    pub fn append_regional_lexer(
+        &mut self,
+        source: SourceSegments<'src>,
+        regional_aliases: Vec<Alias<'src>>,
+    ) {
         self.regional_lexers
             .push_back(RegionalLexer::new(source, regional_aliases));
     }
 
-    pub fn add_alias(&mut self, alias: &str, source_span: String) {
-        self.aliases
-            .push(Alias::new(alias.to_string(), source_span));
+    pub fn add_alias(&mut self, alias: SourceSegments<'src>, source_span: SourceSegments<'src>) {
+        self.aliases.push(Alias::new(alias, source_span));
     }
 
-    pub fn find_alias(&self, alias: &str) -> Option<&Alias> {
+    pub fn find_alias(&self, alias: impl PartialEq<SourceSegments<'src>>) -> Option<&Alias<'src>> {
         let resolution = self
             .aliases
             .iter()
-            .find(|a| a.alias == alias && !a.disabled);
+            .find(|a| alias == a.alias && !a.disabled);
 
         if resolution.is_some() {
             return resolution;
@@ -226,7 +229,7 @@ impl Lexer {
             .unwrap()
             .regional_aliases
             .iter()
-            .find(|a| a.alias == alias);
+            .find(|a| alias == a.alias);
     }
 
     pub fn undef_alias(&mut self, alias: &str) -> bool {
@@ -242,44 +245,40 @@ impl Lexer {
 
     pub fn add_macro(
         &mut self,
-        name: &str,
-        parameters: Vec<Alias>,
+        name: SourceSegments<'src>,
+        parameters: Vec<Alias<'src>>,
         is_variadic: bool,
-        source_span: String,
+        source_span: SourceSegments<'src>,
     ) {
-        self.macros.push(Macro::new(
-            name.to_string(),
-            parameters,
-            is_variadic,
-            source_span,
-        ));
+        self.macros
+            .push(Macro::new(name, parameters, is_variadic, source_span));
     }
 
-    pub fn find_macro(&self, name: &str) -> Option<&Macro> {
-        self.macros.iter().find(|m| m.name == name)
+    pub fn find_macro(&self, name: impl PartialEq<SourceSegments<'src>>) -> Option<&Macro<'src>> {
+        self.macros.iter().find(|m| name == m.name)
     }
 }
 
-pub struct RegionalLexer {
-    source: String,
+pub struct RegionalLexer<'src> {
+    source: SourceSegments<'src>,
     pos: usize,
-    regional_aliases: Vec<Alias>,
+    regional_aliases: Vec<Alias<'src>>,
     cur_token_type: TokenType,
-    cur_token_str: String,
+    cur_token_str: SourceSegments<'src>,
     cur_token_pos: usize,
     pub skip_newline: bool,
     pub skip_backslash: bool,
     pub preproc_match: bool,
 }
 
-impl RegionalLexer {
-    pub fn new(source: String, regional_aliases: Vec<Alias>) -> Self {
+impl<'src> RegionalLexer<'src> {
+    pub fn new(source: SourceSegments<'src>, regional_aliases: Vec<Alias<'src>>) -> Self {
         Self {
             source,
             pos: 0,
             regional_aliases,
             cur_token_type: TokenType::TStart,
-            cur_token_str: String::new(),
+            cur_token_str: SourceSegments::new(&[]),
             cur_token_pos: 0,
             skip_newline: true,
             skip_backslash: true,
@@ -334,11 +333,7 @@ impl RegionalLexer {
     }
 
     fn peek_char(&self, offset: usize) -> u8 {
-        if self.pos + offset >= self.source.len() {
-            return b'\0';
-        }
-
-        self.source.as_bytes()[self.pos + offset]
+        self.source.index(self.pos + offset).unwrap_or(b'\0')
     }
 
     fn read_char(&mut self, offset: usize) {
@@ -374,22 +369,25 @@ impl RegionalLexer {
                 length += 1;
             }
 
-            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
+            self.cur_token_str = self.source.index_range(self.pos..self.pos + length);
             self.read_char(length);
 
-            return match self.cur_token_str.as_str() {
-                "#include" => TokenType::TCppdInclude,
-                "#define" => TokenType::TCppdDefine,
-                "#undef" => TokenType::TCppdUndef,
-                "#error" => TokenType::TCppdError,
-                "#if" => TokenType::TCppdIf,
-                "#elif" => TokenType::TCppdElif,
-                "#ifdef" => TokenType::TCppdIfdef,
-                "#else" => TokenType::TCppdElse,
-                "#endif" => TokenType::TCppdEndif,
+            return match &Into::<Vec<u8>>::into(&self.cur_token_str)[..] {
+                b"#include" => TokenType::TCppdInclude,
+                b"#define" => TokenType::TCppdDefine,
+                b"#undef" => TokenType::TCppdUndef,
+                b"#error" => TokenType::TCppdError,
+                b"#if" => TokenType::TCppdIf,
+                b"#elif" => TokenType::TCppdElif,
+                b"#ifdef" => TokenType::TCppdIfdef,
+                b"#else" => TokenType::TCppdElse,
+                b"#endif" => TokenType::TCppdEndif,
                 _ => error(
                     &Into::<String>::into(&self.source),
-                    &format!("Unexpected preprocessor directive {}", self.cur_token_str),
+                    &format!(
+                        "Unexpected preprocessor directive {}",
+                        Into::<String>::into(&self.cur_token_str)
+                    ),
                     start_pos,
                 ),
             };
@@ -432,7 +430,7 @@ impl RegionalLexer {
                 length += 1;
             }
 
-            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
+            self.cur_token_str = self.source.index_range(self.pos..self.pos + length);
             self.read_char(length);
 
             return TokenType::TNumeric;
@@ -440,13 +438,13 @@ impl RegionalLexer {
 
         if ch == b'(' {
             self.read_char(1);
-            self.cur_token_str = "(".to_string();
+            self.cur_token_str = SourceSegments::new(&[b"("]);
             return TokenType::TOpenBracket;
         }
 
         if ch == b')' {
             self.read_char(1);
-            self.cur_token_str = ")".to_string();
+            self.cur_token_str = SourceSegments::new(&[b")"]);
             return TokenType::TCloseBracket;
         }
 
@@ -472,7 +470,7 @@ impl RegionalLexer {
 
         if ch == b',' {
             self.read_char(1);
-            self.cur_token_str = ",".to_string();
+            self.cur_token_str = SourceSegments::new(&[b","]);
             return TokenType::TComma;
         }
 
@@ -499,7 +497,7 @@ impl RegionalLexer {
                 }
             }
 
-            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
+            self.cur_token_str = self.source.index_range(self.pos..self.pos + length);
             self.read_char(length + 1);
 
             return TokenType::TString;
@@ -523,7 +521,7 @@ impl RegionalLexer {
                 );
             }
 
-            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
+            self.cur_token_str = self.source.index_range(self.pos..self.pos + length);
             self.read_char(length + 1);
             return TokenType::TChar;
         }
@@ -650,13 +648,13 @@ impl RegionalLexer {
             }
 
             self.read_char(1);
-            self.cur_token_str = "+".to_string();
+            self.cur_token_str = SourceSegments::new(&[b"+"]);
             return TokenType::TPlus;
         }
 
         if ch == b';' {
             self.read_char(1);
-            self.cur_token_str = ";".to_string();
+            self.cur_token_str = SourceSegments::new(&[b";"]);
             return TokenType::TSemicolon;
         }
 
@@ -687,25 +685,25 @@ impl RegionalLexer {
                 length += 1;
             }
 
-            self.cur_token_str = self.source[self.pos..self.pos + length].to_string();
+            self.cur_token_str = self.source.index_range(self.pos..self.pos + length);
             self.read_char(length);
 
-            return match self.cur_token_str.as_str() {
-                "if" => TokenType::TIf,
-                "while" => TokenType::TWhile,
-                "for" => TokenType::TFor,
-                "do" => TokenType::TDo,
-                "else" => TokenType::TElse,
-                "return" => TokenType::TReturn,
-                "typedef" => TokenType::TTypedef,
-                "enum" => TokenType::TEnum,
-                "struct" => TokenType::TStruct,
-                "sizeof" => TokenType::TSizeof,
-                "switch" => TokenType::TSwitch,
-                "case" => TokenType::TCase,
-                "break" => TokenType::TBreak,
-                "default" => TokenType::TDefault,
-                "continue" => TokenType::TContinue,
+            return match &Into::<Vec<u8>>::into(&self.cur_token_str)[..] {
+                b"if" => TokenType::TIf,
+                b"while" => TokenType::TWhile,
+                b"for" => TokenType::TFor,
+                b"do" => TokenType::TDo,
+                b"else" => TokenType::TElse,
+                b"return" => TokenType::TReturn,
+                b"typedef" => TokenType::TTypedef,
+                b"enum" => TokenType::TEnum,
+                b"struct" => TokenType::TStruct,
+                b"sizeof" => TokenType::TSizeof,
+                b"switch" => TokenType::TSwitch,
+                b"case" => TokenType::TCase,
+                b"break" => TokenType::TBreak,
+                b"default" => TokenType::TDefault,
+                b"continue" => TokenType::TContinue,
                 _ => TokenType::TIdentifier,
             };
         }

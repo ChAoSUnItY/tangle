@@ -314,7 +314,7 @@ impl<'src> RegionalLexer<'src> {
 
     fn is_numeric(buf: &[u8]) -> bool {
         let mut hex = false;
-        let mut size = buf.len();
+        let size = buf.len();
 
         if size > 2 {
             hex = buf.starts_with(b"0x");

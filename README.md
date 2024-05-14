@@ -15,5 +15,5 @@ once the prototype is finished and tested.
 - [x] nested function-like macro
 - [x] multiple line function-like macro (backed by `\` backslash character)
 - [x] `__VA_ARGS__` parameter in function-like macro
-- [ ] identifier concatentation (`##` concatentation operator)
-- [ ] identifier stringfication (`#` stringification operator)
+- [ ] token concatentation (`##` concatentation operator)
+- [ ] token stringification (`#` stringification operator)

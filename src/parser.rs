@@ -30,11 +30,11 @@ impl Parser {
                 continue;
             } else {
                 builder.push_str(&self.lexer.current_token_str());
-                println!(
-                    "{:?}: {:?}",
-                    self.lexer.current_token_type(),
-                    self.lexer.current_token_str()
-                );
+                // println!(
+                //     "{:?}: {:?}",
+                //     self.lexer.current_token_type(),
+                //     self.lexer.current_token_str()
+                // );
                 self.lexer.lex_token(true);
             }
         }

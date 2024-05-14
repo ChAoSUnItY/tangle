@@ -6,7 +6,7 @@ use parser::Parser;
 mod defs;
 mod globals;
 mod lexer;
-mod parser;
+pub mod parser;
 
 fn main() {
     let source = get_source();

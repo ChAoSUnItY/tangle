@@ -149,6 +149,7 @@ impl Lexer {
         self.next_token();
 
         let token_type = self.current_token_type();
+        let token_str = self.current_token_str();
 
         match token_type {
             TokenType::TIdentifier => {

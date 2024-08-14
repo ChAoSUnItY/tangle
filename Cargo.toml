@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
+test-case = "*"
 criterion = "0.5.1"
 
 [[bench]]

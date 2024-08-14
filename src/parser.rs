@@ -138,6 +138,7 @@ impl Parser {
             self.lexer.lex_expect(TokenType::TIdentifier, false);
             let start_pos = self.lexer.current_token_pos();
             self.lexer.current_mut_regional_lexer().skip_newline = false;
+            self.lexer.ignore_stringify = true;
 
             if self.lexer.lex_accept(TokenType::TOpenBracket, false) {
                 let mut is_variadic = false;
@@ -182,6 +183,7 @@ impl Parser {
 
                 let end_pos = self.lexer.current_token_pos();
                 self.lexer.current_mut_regional_lexer().skip_newline = true;
+                self.lexer.ignore_stringify = false;
                 self.lexer.lex_expect(TokenType::TNewline, false);
 
                 // Validate if __VA_ARGS__ is at the end of parameter list

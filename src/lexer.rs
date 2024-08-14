@@ -79,6 +79,7 @@ pub enum TokenType {
     TCppdElse,
     TCppdEndif,
     TCppdIfdef,
+    TCppdStringify, /* # */
     /* hints */
     TBackslash,
     TNewline,
@@ -88,6 +89,7 @@ pub struct Lexer {
     regional_lexers: VecDeque<RegionalLexer>,
     aliases: Vec<Alias>,
     macros: Vec<Macro>,
+    pub ignore_stringify: bool,
 }
 
 impl Lexer {
@@ -96,6 +98,7 @@ impl Lexer {
             regional_lexers: VecDeque::from(vec![RegionalLexer::new(source.to_owned(), vec![])]),
             aliases: vec![],
             macros: vec![],
+            ignore_stringify: false,
         }
     }
 
@@ -125,10 +128,39 @@ impl Lexer {
                     }
                 }
             }
+            TokenType::TCppdStringify => {
+                if self.ignore_stringify {
+                    return TokenType::TCppdStringify;
+                }
+
+                self.lex_token_then_expand_as_string();
+                return TokenType::TString;
+            }
             _ => {}
         }
 
         token_type
+    }
+
+    /// Tokenizes next token and expand into a string token if the following conditions are met:
+    /// 1. Token has type TIdentifier
+    /// 2. Expands to its alias once if identifier tokens
+    pub fn lex_token_then_expand_as_string(&mut self) {
+        self.next_token();
+
+        let token_type = self.current_token_type();
+
+        match token_type {
+            TokenType::TIdentifier => {
+                if let Some(alias) = self.find_alias(&self.current_token_str()) {
+                    self.current_mut_regional_lexer().cur_token_str = alias.replacement.clone();
+                    self.current_mut_regional_lexer().cur_token_type = TokenType::TString;
+                }
+            }
+            _ => {}
+        }
+
+        self.current_mut_regional_lexer().cur_token_str = format!("\"{}\"", self.current_mut_regional_lexer().cur_token_str);
     }
 
     pub fn lex_accept_internal(&mut self, token_type: TokenType, aliasing: bool) -> bool {
@@ -267,6 +299,7 @@ pub struct RegionalLexer {
     cur_token_type: TokenType,
     cur_token_str: String,
     cur_token_pos: usize,
+    pub ignore_stringify: bool,
     pub skip_newline: bool,
     pub skip_backslash: bool,
     pub preproc_match: bool,
@@ -281,6 +314,7 @@ impl RegionalLexer {
             cur_token_type: TokenType::TStart,
             cur_token_str: String::new(),
             cur_token_pos: 0,
+            ignore_stringify: false,
             skip_newline: true,
             skip_backslash: true,
             preproc_match: false,
@@ -387,6 +421,7 @@ impl RegionalLexer {
                 "#ifdef" => TokenType::TCppdIfdef,
                 "#else" => TokenType::TCppdElse,
                 "#endif" => TokenType::TCppdEndif,
+                "#" => TokenType::TCppdStringify,
                 _ => error(
                     &Into::<String>::into(&self.source),
                     &format!("Unexpected preprocessor directive {}", self.cur_token_str),

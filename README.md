@@ -16,4 +16,4 @@ once the prototype is finished and tested.
 - [x] multiple line function-like macro (backed by `\` backslash character)
 - [x] `__VA_ARGS__` parameter in function-like macro
 - [ ] token concatentation (`##` concatentation operator)
-- [ ] token stringification (`#` stringification operator)
+- [ ] token stringizing (`#` stringizing operator)

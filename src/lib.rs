@@ -1,5 +1,3 @@
-use std::{fs::File, io::Write};
-
 use globals::get_source;
 use parser::Parser;
 
@@ -45,8 +43,8 @@ mod test {
         assert_eq!(parser_output, output);
     }
 
-    #[test_case("alias.c"; "Tests alias expansion")]
-    #[test_case("macro.c"; "Tests macro expansion")]
+    #[test_case("alias.c"; "Test alias expansion")]
+    #[test_case("macro.c"; "Test macro expansion")]
     fn test_cpp_result_eq_(file_path: &'static str) {
         let full_file_path = format!("test_suite/{}", file_path);
         let input = fs::read_to_string(&full_file_path)

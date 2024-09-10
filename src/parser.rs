@@ -137,12 +137,11 @@ impl Parser {
             let alias = self.lexer.current_token_str();
             self.lexer.lex_expect(TokenType::TIdentifier, false);
             let start_pos = self.lexer.current_token_pos();
-            self.lexer.current_mut_regional_lexer().skip_newline = false;
+            self.lexer.current_mut_regional_lexer().skip_backslash_newline = false;
             self.lexer.ignore_stringify = true;
 
             if self.lexer.lex_accept(TokenType::TOpenBracket, false) {
                 let mut is_variadic = false;
-                self.lexer.current_mut_regional_lexer().skip_backslash = false;
 
                 // Macro
                 let mut parameters = vec![];
@@ -182,9 +181,8 @@ impl Parser {
                 }
 
                 let end_pos = self.lexer.current_token_pos();
-                self.lexer.current_mut_regional_lexer().skip_newline = true;
+                self.lexer.current_mut_regional_lexer().skip_backslash_newline = true;
                 self.lexer.ignore_stringify = false;
-                self.lexer.lex_expect(TokenType::TNewline, false);
 
                 // Validate if __VA_ARGS__ is at the end of parameter list
                 if is_variadic {
@@ -219,24 +217,32 @@ impl Parser {
                     is_variadic,
                     self.lexer.global_source()[start_pos..end_pos].to_string(),
                 );
+
+                self.lexer.lex_expect(TokenType::TNewline, true);
             } else {
                 while !self.lexer.lex_peek(TokenType::TNewline) {
-                    self.lexer.lex_token(false);
+                    if self.lexer.lex_accept(TokenType::TBackslash, true) {
+                        self.lexer.lex_expect(TokenType::TNewline, true);
+                    } else {
+                        self.lexer.lex_token(false);
+                    }
                 }
 
                 let end_pos = self.lexer.current_token_pos();
-                self.lexer.current_mut_regional_lexer().skip_newline = true;
-                self.lexer.lex_expect(TokenType::TNewline, false);
+                self.lexer.current_mut_regional_lexer().skip_backslash_newline = true;
 
+                // Add alias first then resolve next potential alias
                 self.lexer.add_alias(
                     &alias,
                     self.lexer.global_source()[start_pos..end_pos].to_string(),
                 );
+                
+                self.lexer.lex_expect(TokenType::TNewline, true);
             }
 
             return true;
         }
 
-        return false;
+        false
     }
 }

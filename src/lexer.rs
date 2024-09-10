@@ -86,6 +86,7 @@ pub enum TokenType {
 }
 
 pub struct Lexer {
+    global_lexer: RegionalLexer,
     regional_lexers: VecDeque<RegionalLexer>,
     aliases: Vec<Alias>,
     macros: Vec<Macro>,
@@ -95,7 +96,8 @@ pub struct Lexer {
 impl Lexer {
     pub fn new(source: &str) -> Self {
         Self {
-            regional_lexers: VecDeque::from(vec![RegionalLexer::new(source.to_owned(), vec![])]),
+            global_lexer: RegionalLexer::new(source.to_owned(), vec![]),
+            regional_lexers: VecDeque::new(),
             aliases: vec![],
             macros: vec![],
             ignore_stringify: false,
@@ -103,7 +105,11 @@ impl Lexer {
     }
 
     fn next_token(&mut self) {
-        self.regional_lexers.back_mut().unwrap().lex_token();
+        if let Some(regional) = self.regional_lexers.back_mut() {
+            regional.lex_token();
+        } else {
+            self.global_lexer.lex_token();
+        }
     }
 
     pub fn lex_token(&mut self, aliasing: bool) -> TokenType {
@@ -113,8 +119,8 @@ impl Lexer {
 
         match token_type {
             TokenType::TEof => {
-                if self.regional_lexers.len() > 1 {
-                    // esacapes current region
+                if !self.regional_lexers.is_empty() {
+                    // escapes current region
                     self.regional_lexers.pop_back();
                     return self.lex_token(aliasing);
                 }
@@ -198,11 +204,11 @@ impl Lexer {
     }
 
     pub fn current_regional_lexer(&self) -> &RegionalLexer {
-        self.regional_lexers.back().unwrap()
+        self.regional_lexers.back().unwrap_or(&self.global_lexer)
     }
 
     pub fn current_mut_regional_lexer(&mut self) -> &mut RegionalLexer {
-        self.regional_lexers.back_mut().unwrap()
+        self.regional_lexers.back_mut().unwrap_or(&mut self.global_lexer)
     }
 
     pub fn current_token_type(&self) -> TokenType {
@@ -222,7 +228,7 @@ impl Lexer {
     }
 
     pub fn global_source(&self) -> String {
-        (&self.regional_lexers.front().unwrap().source).into()
+        self.global_lexer.source.clone()
     }
 
     pub fn regional_source(&self) -> String {
@@ -253,13 +259,11 @@ impl Lexer {
             return resolution;
         }
 
-        return self
-            .regional_lexers
-            .back()
-            .unwrap()
+        self
+            .current_regional_lexer()
             .regional_aliases
             .iter()
-            .find(|a| a.alias == alias);
+            .find(|a| a.alias == alias)
     }
 
     pub fn undef_alias(&mut self, alias: &str) -> bool {
@@ -301,8 +305,7 @@ pub struct RegionalLexer {
     cur_token_str: String,
     cur_token_pos: usize,
     pub ignore_stringify: bool,
-    pub skip_newline: bool,
-    pub skip_backslash: bool,
+    pub skip_backslash_newline: bool,
     pub preproc_match: bool,
 }
 
@@ -316,8 +319,7 @@ impl RegionalLexer {
             cur_token_str: String::new(),
             cur_token_pos: 0,
             ignore_stringify: false,
-            skip_newline: true,
-            skip_backslash: true,
+            skip_backslash_newline: true,
             preproc_match: false,
         }
     }
@@ -385,8 +387,8 @@ impl RegionalLexer {
             let ch = self.peek_char(0);
 
             if Self::is_whitespace(ch)
-                || self.skip_newline && Self::is_newline(ch)
-                || self.skip_backslash && ch == b'\\'
+                || self.skip_backslash_newline && Self::is_newline(ch)
+                || self.skip_backslash_newline && ch == b'\\'
             {
                 self.pos += 1;
                 continue;

@@ -11,6 +11,10 @@ edition = "2021"
 test-case = "*"
 criterion = "0.5.1"
 
+[[bin]]
+name = "tangle"
+path = "src/bin.rs"
+
 [[bench]]
 name = "bench_lexer"
 harness = false

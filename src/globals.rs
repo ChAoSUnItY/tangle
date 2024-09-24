@@ -8,6 +8,8 @@ use std::{
     path::PathBuf,
 };
 
+use crate::defs::Location;
+
 pub static SOURCE: OnceLock<String> = OnceLock::new();
 
 fn read_source_file(file_path: impl Into<PathBuf>) -> Result<String, Error> {
@@ -47,8 +49,10 @@ pub fn get_source() -> &'static str {
     SOURCE.get_or_init(|| read_source_file("shecc/src/main.c").unwrap())
 }
 
-pub fn error<'src, 'msg>(source: &'src str, msg: &'msg str, pos: usize) -> ! {
-    let mut offset = pos.clamp(0, source.len() - 1);
+pub fn error(files: &Vec<String>, loc: &Location, source: impl ToString, msg: &str) -> ! {
+    let source = source.to_string();
+    let file_name = files.get(loc.file_idx).map(String::as_str).unwrap_or("unknown");
+    let mut offset = loc.pos.clamp(0, source.len() - 1);
     let start_idx: usize;
     let end_idx: usize;
 
@@ -56,8 +60,8 @@ pub fn error<'src, 'msg>(source: &'src str, msg: &'msg str, pos: usize) -> ! {
         offset -= 1;
     }
 
-    start_idx = offset;
-    offset = pos.clamp(0, source.len() - 1);
+    start_idx = offset + 1;
+    offset = loc.pos.clamp(0, source.len() - 1);
 
     while offset < source.len() && source.as_bytes()[offset] != b'\n' {
         offset += 1;
@@ -65,8 +69,9 @@ pub fn error<'src, 'msg>(source: &'src str, msg: &'msg str, pos: usize) -> ! {
 
     end_idx = offset;
 
+    println!("[{}: line {}]", file_name, loc.line);
     println!("{}", &source[start_idx..end_idx]);
-    println!("{}^ {msg}", " ".repeat(pos - start_idx));
+    println!("{}^ {msg}", " ".repeat(loc.pos - start_idx));
     println!("Backtrace: {}", Backtrace::capture());
     abort()
 }

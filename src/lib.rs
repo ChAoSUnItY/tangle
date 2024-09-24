@@ -1,19 +1,7 @@
-use globals::get_source;
-use parser::Parser;
-
 mod defs;
 mod globals;
 mod lexer;
 pub mod parser;
-
-fn main() {
-    let source = get_source();
-
-    {
-        let mut parser = Parser::new(include_str!("../example.c"));
-        parser.read_global_statements();
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -26,7 +14,7 @@ mod test {
     #[test]
     fn test_cpp_result_eq() {
         let input = include_str!("../example.c");
-        let mut parser = Parser::new(input);
+        let mut parser = Parser::new("../example.c", input);
         let parser_output = parser.read_global_statements();
         let output = Command::new("cpp")
             .arg("example.c")
@@ -47,9 +35,8 @@ mod test {
     #[test_case("macro.c"; "Test macro expansion")]
     fn test_cpp_result_eq_(file_path: &'static str) {
         let full_file_path = format!("test_suite/{}", file_path);
-        let input = fs::read_to_string(&full_file_path)
-            .expect("Unable to read file");
-        let mut parser = Parser::new(&input);
+        let input = fs::read_to_string(&full_file_path).expect("Unable to read file");
+        let mut parser = Parser::new(&full_file_path, &input);
         let parser_output = parser.read_global_statements();
         let output = Command::new("cpp")
             .arg(full_file_path)

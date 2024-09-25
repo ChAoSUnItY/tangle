@@ -1,6 +1,5 @@
 use std::{
-    collections::{HashSet, VecDeque},
-    vec::IntoIter,
+    collections::VecDeque, mem::swap, vec::IntoIter
 };
 
 use crate::{
@@ -202,18 +201,25 @@ impl Lexer {
             }
         }
 
-        if self.lex_accept(TokenType::TCppdHashHash) {
-            // let Some(prev_token) = &self.current_regional_lexer().prev_token
-            // else {
-            //     error(
-            //         &self.file_map.borrow(),
-            //         &self.current_token_loc(),
-            //         &self.global_source(),
-            //         "Cannot concat tokens while `##` is at the start of macro expansion"
-            //     );
-            // };
+        if self.lex_peek(TokenType::TCppdHashHash) {
+            let Some(prev_token) = &self.current_regional_lexer().prev_token.clone()
+            else {
+                error(
+                    &self.file_map.borrow(),
+                    &self.current_token_loc(),
+                    &self.global_source(),
+                    "Cannot concat tokens while `##` is at the start of macro expansion"
+                );
+            };
 
-            // FIXME: Check Lhs here in future migration
+            self.lex_expect(TokenType::TCppdHashHash);
+
+            let next_token = self.current_token().clone();
+
+            if let Some(arg) = self.find_macro_arg(&next_token.literal).cloned() {
+                let rhs = Self::join_tokens(&arg.replacement);
+            }
+
             // FIXME: Check Rhs here in future migration
             // Reason: We don't implement boundry checking 
             // here is due to the ideology provided by rust,
@@ -582,12 +588,14 @@ impl RegionalLexer {
 
     fn next_token(&mut self) {
         if self.lexer_mode == LexerMode::Token {
-            if let Some(token) = self.tokens.next() {
-                if self.cur_token.token_type != TokenType::TStart {
-                    self.prev_token = Some(self.cur_token.clone());
+            if let Some(mut token) = self.tokens.next() {
+                // Swaps out self.cur_token to variable token then replace to
+                // self.prev_token if self.cur_token is not an starting token
+                swap(&mut self.cur_token, &mut token);
+                
+                if token.token_type != TokenType::TStart {
+                    self.prev_token = Some(token);
                 }
-
-                self.cur_token = token;
             } else if self.cur_token.token_type != TokenType::TEof {
                 self.prev_token = Some(self.cur_token.clone());
                 self.cur_token = Token::new("", TokenType::TEof, self.cur_token.loc.clone());

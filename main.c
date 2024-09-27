@@ -3,7 +3,9 @@
 #define STR(A) #A
 #define IMM_STR(A) STR(A)
 #define CONCAT(A, B) A ## B
+#define CONCAT_2(A, B) # A ## B
 
 ADD(12, 13)
 STR(12 3 24)
 CONCAT(12, 13)
+CONCAT_2(12, 13)

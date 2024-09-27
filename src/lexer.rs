@@ -1,6 +1,4 @@
-use std::{
-    collections::VecDeque, mem::swap, vec::IntoIter
-};
+use std::{collections::VecDeque, iter::Peekable, mem::swap, vec::IntoIter};
 
 use crate::{
     defs::{FileMap, Location, Macro, MacroArg, Token, TokenType},
@@ -41,32 +39,25 @@ impl Lexer {
 
         let token_type = self.current_token_type();
 
-        match token_type {
-            TokenType::TEof => {
+        match (self.current_regional_lexer().is_in_macro(), token_type) {
+            (_, TokenType::TEof) => {
                 if !self.regional_lexers.is_empty() {
                     // escapes current region
                     self.regional_lexers.pop_back();
                     return self.lex_token();
                 }
             }
-            TokenType::TIdentifier => {
-                if self.current_regional_lexer().is_in_macro() {
-                    if self.substitute_token() {
-                        return self.lex_token();
-                    }
-                }
-
+            (false, TokenType::TIdentifier) => {
                 if self.expand_token() {
                     return self.lex_token();
                 }
             }
-            _ => {
-                if self.current_regional_lexer().is_in_macro() {
-                    if self.substitute_token() {
-                        return self.lex_token();
-                    }
+            (true, _) => {
+                if self.substitute_token() {
+                    return self.lex_token();
                 }
             }
+            (false, _) => {}
         }
 
         token_type
@@ -194,7 +185,7 @@ impl Lexer {
         if self.lex_accept_raw(TokenType::TCppdHash) {
             // Stringize operator `#`
             let ident_token = self.current_token().clone();
-            
+
             if let Some(arg) = self.find_macro_arg(&ident_token.literal).cloned() {
                 self.stringize(&ident_token, &arg.clone().replacement);
             } else {
@@ -209,21 +200,43 @@ impl Lexer {
             return true;
         }
 
-        if self.lex_peek(TokenType::TCppdHashHash) {
-            let Some(prev_token) = &self.current_regional_lexer().prev_token.clone()
-            else {
-                error(
-                    &self.file_map.borrow(),
-                    &self.current_token_loc(),
-                    &self.global_source(),
-                    "Cannot concat tokens while `##` is at the start of macro expansion"
-                );
-            };
-            let mut concatenated_string = prev_token.literal.clone();
+        if let Some(arg) = self.find_macro_arg(self.current_token_literal()).cloned() {
+            self.current_mut_regional_lexer()
+                .prepend_tokens(arg.replacement);
+            return true;
+        }
+
+        if self.current_token_type() == TokenType::TCppdHashHash {
+            // Missing Lhs.
+            // This will only happens if current token is the first token in the token iterator.
+            error(
+                &self.file_map.borrow(),
+                &self.current_token_loc(),
+                &self.global_source(),
+                "Cannot concat tokens while `##` is at the start of macro expansion",
+            );
+        }
+
+        if self.current_mut_regional_lexer().peek_next_token() == TokenType::TCppdHashHash {
+            let mut concatenated_string = self.current_token_literal().to_owned();
+
+            self.lex_token_raw();
+
+            let hash_hash_token_loc = self.current_token_loc();
 
             self.lex_expect_raw(TokenType::TCppdHashHash);
 
             let next_token = self.current_token().clone();
+
+            if next_token.token_type == TokenType::TEof {
+                // Missing Rhs.
+                error(
+                    &self.file_map.borrow(),
+                    &hash_hash_token_loc,
+                    &self.global_source(),
+                    "Cannot concat tokens while `##` is at the end of macro expansion",
+                );
+            }
 
             if let Some(arg) = self.find_macro_arg(&next_token.literal).cloned() {
                 let rhs = Self::join_tokens(&arg.replacement);
@@ -236,11 +249,6 @@ impl Lexer {
             self.next_token();
 
             self.append_regional_source_lexer(self.current_file_idx(), concatenated_string);
-            return true;
-        }
-
-        if let Some(arg) = self.find_macro_arg(self.current_token_literal()).cloned() {
-            self.current_mut_regional_lexer().prepend_tokens(arg.replacement);
             return true;
         }
 
@@ -264,7 +272,7 @@ impl Lexer {
     pub fn stringize(&mut self, arg_token_loc: &Token, replacement: &[Token]) {
         let string = format!("\"{}\"", Self::join_tokens(replacement));
         let string_token = Token::new(string, TokenType::TString, arg_token_loc.loc.clone());
-        
+
         // Consume the macro argument identifier here and
         // don't try to escape current region aggressively
         self.next_token();
@@ -438,7 +446,10 @@ impl Lexer {
     }
 
     pub fn find_macro_arg(&self, name: &str) -> Option<&MacroArg> {
-        self.current_regional_lexer().macro_args.iter().find(|arg| arg.name == name)
+        self.current_regional_lexer()
+            .macro_args
+            .iter()
+            .find(|arg| arg.name == name)
     }
 }
 
@@ -456,7 +467,7 @@ pub struct RegionalLexer {
     /// Source-specialized lexer fields
     line: usize,
     source: String,
-    // Refers to source code index under 
+    // Refers to source code index under
     // LexerMode::Source; refers to `tokens`
     // index under LexerMode::Token.
     pos: usize,
@@ -466,8 +477,7 @@ pub struct RegionalLexer {
     // Macro-specialized lexer fields
     pub macro_name_token: Option<Token>,
     pub macro_args: Vec<MacroArg>,
-    pub prev_token: Option<Token>,
-    tokens: IntoIter<Token>,
+    tokens: Peekable<IntoIter<Token>>,
 }
 
 impl RegionalLexer {
@@ -484,8 +494,7 @@ impl RegionalLexer {
             preproc_match: false,
             macro_name_token: None,
             macro_args: Vec::new(),
-            prev_token: None,
-            tokens: Vec::new().into_iter(),
+            tokens: Vec::new().into_iter().peekable(),
         }
     }
 
@@ -501,15 +510,14 @@ impl RegionalLexer {
             source: String::new(),
             lexer_mode: LexerMode::Token,
             file_idx,
-            line: 0,     // Unused, use cur_token to get line number instead.
-            pos: 0,      // Unused, use cur_token to get position instead.
+            line: 0, // Unused, use cur_token to get line number instead.
+            pos: 0,  // Unused, use cur_token to get position instead.
             cur_token: Token::new("", TokenType::TStart, Location::new(file_idx, 1, 0)),
             skip_backslash_newline: true,
             preproc_match: false,
             macro_name_token: Some(macro_name_token),
             macro_args,
-            prev_token: None,
-            tokens: tokens.into_iter(),
+            tokens: tokens.into_iter().peekable(),
         }
     }
 
@@ -603,16 +611,11 @@ impl RegionalLexer {
 
     fn next_token(&mut self) {
         if self.lexer_mode == LexerMode::Token {
-            if let Some(mut token) = self.tokens.next() {
+            if let Some(token) = self.tokens.next() {
                 // Swaps out self.cur_token to variable token then replace to
                 // self.prev_token if self.cur_token is not an starting token
-                swap(&mut self.cur_token, &mut token);
-                
-                if token.token_type != TokenType::TStart {
-                    self.prev_token = Some(token);
-                }
+                self.cur_token = token;
             } else if self.cur_token.token_type != TokenType::TEof {
-                self.prev_token = Some(self.cur_token.clone());
                 self.cur_token = Token::new("", TokenType::TEof, self.cur_token.loc.clone());
             }
             return;
@@ -983,16 +986,28 @@ impl RegionalLexer {
     }
 
     /// Prepends a stream of tokens to the lexer's token backend only
-    /// if the lexer is under LexerMode::Token.
+    /// if the lexer is under [LexerMode::Token].
     pub fn prepend_tokens(&mut self, mut tokens: Vec<Token>) {
         if self.is_in_macro() {
             for token in self.tokens.by_ref() {
                 tokens.push(token);
             }
 
-            self.tokens = tokens.into_iter();
+            self.tokens = tokens.into_iter().peekable();
             self.cur_token = Token::new("", TokenType::TStart, Location::new(self.file_idx, 1, 0));
-            self.prev_token = None;
         }
+    }
+
+    /// Peeks the next token from the underlying token iterator without
+    /// advancing it. Returns [TokenType::TEof] if current lexer mode is
+    /// [LexerMode::Source]
+    pub fn peek_next_token(&mut self) -> TokenType {
+        if self.is_in_macro() {
+            if let Some(token) = self.tokens.peek().map(|token| token.token_type) {
+                return token;
+            }
+        }
+
+        TokenType::TEof
     }
 }

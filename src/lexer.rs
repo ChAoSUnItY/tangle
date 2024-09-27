@@ -50,6 +50,12 @@ impl Lexer {
                 }
             }
             TokenType::TIdentifier => {
+                if self.current_regional_lexer().is_in_macro() {
+                    if self.substitute_token() {
+                        return self.lex_token();
+                    }
+                }
+
                 if self.expand_token() {
                     return self.lex_token();
                 }
@@ -183,7 +189,9 @@ impl Lexer {
     }
 
     pub fn substitute_token(&mut self) -> bool {
-        if self.lex_accept(TokenType::TCppdHash) {
+        // Lex next token in raw form for later stringize
+        // usage verification.
+        if self.lex_accept_raw(TokenType::TCppdHash) {
             // Stringize operator `#`
             let ident_token = self.current_token().clone();
             
@@ -211,6 +219,7 @@ impl Lexer {
                     "Cannot concat tokens while `##` is at the start of macro expansion"
                 );
             };
+            let mut concatenated_string = prev_token.literal.clone();
 
             self.lex_expect(TokenType::TCppdHashHash);
 
@@ -218,15 +227,21 @@ impl Lexer {
 
             if let Some(arg) = self.find_macro_arg(&next_token.literal).cloned() {
                 let rhs = Self::join_tokens(&arg.replacement);
+                concatenated_string.push_str(&rhs);
+            } else {
+                concatenated_string.push_str(&next_token.literal);
             }
 
-            // FIXME: Check Rhs here in future migration
-            // Reason: We don't implement boundry checking 
-            // here is due to the ideology provided by rust,
-            // which is quite hard to have a good way to access
-            // previous and next element without any performance 
-            // penalty.
+            // Skips Rhs token
+            self.lex_token();
 
+            self.append_regional_source_lexer(self.current_file_idx(), concatenated_string);
+            return true;
+        }
+
+        if let Some(arg) = self.find_macro_arg(self.current_token_literal()).cloned() {
+            self.current_mut_regional_lexer().prepend_tokens(arg.replacement);
+            return true;
         }
 
         false
@@ -965,5 +980,19 @@ impl RegionalLexer {
         };
         self.cur_token = Token::new(literal, token_type, loc);
         self.read_char(length);
+    }
+
+    /// Prepends a stream of tokens to the lexer's token backend only
+    /// if the lexer is under LexerMode::Token.
+    pub fn prepend_tokens(&mut self, mut tokens: Vec<Token>) {
+        if self.is_in_macro() {
+            for token in self.tokens.by_ref() {
+                tokens.push(token);
+            }
+
+            self.tokens = tokens.into_iter();
+            self.cur_token = Token::new("", TokenType::TStart, Location::new(self.file_idx, 1, 0));
+            self.prev_token = None;
+        }
     }
 }

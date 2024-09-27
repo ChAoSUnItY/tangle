@@ -5,5 +5,5 @@
 #define CONCAT(A, B) A ## B
 
 ADD(12, 13)
-STR(12 3)
+STR(12 3 24)
 CONCAT(12, 13)

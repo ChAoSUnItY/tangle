@@ -197,8 +197,6 @@ impl Lexer {
             
             if let Some(arg) = self.find_macro_arg(&ident_token.literal).cloned() {
                 self.stringize(&ident_token, &arg.clone().replacement);
-                
-                return true;
             } else {
                 error(
                     &self.file_map.borrow(),
@@ -207,6 +205,8 @@ impl Lexer {
                     "Cannot stringize any token but a macro parameter",
                 );
             }
+
+            return true;
         }
 
         if self.lex_peek(TokenType::TCppdHashHash) {
@@ -221,7 +221,7 @@ impl Lexer {
             };
             let mut concatenated_string = prev_token.literal.clone();
 
-            self.lex_expect(TokenType::TCppdHashHash);
+            self.lex_expect_raw(TokenType::TCppdHashHash);
 
             let next_token = self.current_token().clone();
 
@@ -232,8 +232,8 @@ impl Lexer {
                 concatenated_string.push_str(&next_token.literal);
             }
 
-            // Skips Rhs token
-            self.lex_token();
+            // Skips Rhs token but don't try to escape current region aggressively
+            self.next_token();
 
             self.append_regional_source_lexer(self.current_file_idx(), concatenated_string);
             return true;
@@ -265,9 +265,9 @@ impl Lexer {
         let string = format!("\"{}\"", Self::join_tokens(replacement));
         let string_token = Token::new(string, TokenType::TString, arg_token_loc.loc.clone());
         
-        // Consume the macro argument identifier here to prevent
-        // retrieve macro arguments after escaping macro token lexer
-        self.lex_expect(TokenType::TIdentifier);
+        // Consume the macro argument identifier here and
+        // don't try to escape current region aggressively
+        self.next_token();
 
         self.append_regional_token_lexer(
             self.current_file_idx(),

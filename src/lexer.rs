@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, iter::Peekable, mem::swap, vec::IntoIter};
+use std::{collections::VecDeque, iter::Peekable, mem::swap, slice::Iter, vec::IntoIter};
 
 use crate::{
     defs::{FileMap, Location, Macro, MacroArg, Token, TokenType},
@@ -48,7 +48,7 @@ impl Lexer {
                 }
             }
             (false, TokenType::TIdentifier) => {
-                if self.expand_token() {
+                if self.expand_macro_direct() {
                     return self.lex_token();
                 }
             }
@@ -86,8 +86,58 @@ impl Lexer {
         token_type
     }
 
+    pub fn expand_arg(&mut self) -> bool {
+        let ident_token = self.current_token().clone();
+
+        if let Some(arg) = self.find_macro_arg(&ident_token.literal).cloned() {
+            let mut queued_replacement = VecDeque::from_iter(arg.replacement);
+            let mut expanded = Vec::with_capacity(queued_replacement.len());
+
+            while !queued_replacement.is_empty() {
+                let token = queued_replacement.pop_front().unwrap();
+                
+                if let Some(macro_expansion) = self.expand_macro_indirect(&token) {
+                    for macro_token in macro_expansion {
+                        queued_replacement.push_front(macro_token);
+                    }
+                    continue;
+                }
+
+                expanded.push(token);
+            }
+
+            self.append_regional_token_lexer(self.current_file_idx(), ident_token, expanded, vec![]);
+            return true;
+        }
+        
+        false
+    }
+
+    pub fn expand_macro_indirect(&mut self, token: &Token) -> Option<Vec<Token>> {
+        if let Some(mac) = self.find_macro(&token.literal).cloned() {
+            if mac.function_like && self.lex_peek_raw(TokenType::TOpenBracket) {
+                return None;
+            }
+
+            let ident_token = token.clone();
+
+            if !mac.function_like {
+                let file_idx = self.current_regional_lexer().file_idx;
+                self.lex_expect_raw(TokenType::TIdentifier);
+                return Some(mac.replacement);
+            } else {
+                self.lex_expect_raw(TokenType::TIdentifier);
+                self.lex_expect_raw(TokenType::TOpenBracket);
+                let args = self.read_macro_args(&mac);
+                todo!("Subst here")
+            }
+        }
+
+        None
+    }
+
     /// Attempts to expand a token, returns true if the expansion succeeded, false otherwise.
-    pub fn expand_token(&mut self) -> bool {
+    pub fn expand_macro_direct(&mut self) -> bool {
         let ident_token = self.current_token();
 
         if let Some(mac) = self.find_macro(&ident_token.literal).cloned() {
@@ -172,6 +222,11 @@ impl Lexer {
                 bracket_depth -= 1;
             }
 
+            if self.expand_arg() {
+                self.lex_token_raw();
+                continue;
+            }
+
             arg_tokens.push(self.current_token().clone());
             self.lex_token_raw();
         }
@@ -187,7 +242,7 @@ impl Lexer {
             let ident_token = self.current_token().clone();
 
             if let Some(arg) = self.find_macro_arg(&ident_token.literal).cloned() {
-                self.stringize(&ident_token, &arg.clone().replacement);
+                self.stringize(&ident_token, &arg.replacement);
             } else {
                 error(
                     &self.file_map.borrow(),
@@ -197,12 +252,6 @@ impl Lexer {
                 );
             }
 
-            return true;
-        }
-
-        if let Some(arg) = self.find_macro_arg(self.current_token_literal()).cloned() {
-            self.current_mut_regional_lexer()
-                .prepend_tokens(arg.replacement);
             return true;
         }
 
@@ -219,6 +268,10 @@ impl Lexer {
 
         if self.current_mut_regional_lexer().peek_next_token() == TokenType::TCppdHashHash {
             let mut concatenated_string = self.current_token_literal().to_owned();
+
+            if let Some(arg) = self.find_macro_arg(&concatenated_string) {
+                concatenated_string = Self::join_tokens(&arg.replacement);
+            }
 
             self.lex_token_raw();
 
@@ -249,6 +302,14 @@ impl Lexer {
             self.next_token();
 
             self.append_regional_source_lexer(self.current_file_idx(), concatenated_string);
+            return true;
+        }
+
+        if let Some(mac) = self.find_macro(self.current_token_literal()) {
+            todo!("Parse nested macro here")
+        }
+
+        if self.expand_arg() {
             return true;
         }
 
